@@ -33,10 +33,12 @@
             }
 
             try {
+                // Kirjoita kuvatiedostot
                 for (let i = 0; i < images.length; i++) {
                     ffmpeg.FS('writeFile', `image${i}.jpg`, await fetchFile(images[i]));
                 }
 
+                // Aja FFmpeg-komento
                 await ffmpeg.run(
                     '-framerate', '1',
                     '-i', 'image%d.jpg',
@@ -46,6 +48,7 @@
                     'output.mp4'
                 );
 
+                // Lue tulostiedosto ja näytä video
                 const data = ffmpeg.FS('readFile', 'output.mp4');
                 const video = document.getElementById('outputVideo');
                 video.src = URL.createObjectURL(
