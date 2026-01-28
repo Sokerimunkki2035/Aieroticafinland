@@ -2,77 +2,63 @@
 <html>
 <head>
     <title>Kuvat videoksi</title>
-    <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
+    <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.12.7/dist/umd/ffmpeg.umd.js"></script>
+    <script src="https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd/index.js"></script>
     <style>
-        body { font-family: Arial; text-align: center; margin: 20px; }
-        button { padding: 10px 20px; font-size: 16px; margin: 5px; }
+        body { font-family: sans-serif; text-align: center; padding: 20px; background: #f0f0f0; }
+        #outputVideo { width: 90%; margin-top: 20px; background: black; }
+        button { padding: 15px; margin: 10px; border-radius: 8px; border: none; background: #007bff; color: white; font-weight: bold; }
     </style>
 </head>
 <body>
-    <h1>Lataa kuvat ja luo video</h1>
+    <h1>Kuvista videoksi</h1>
     <input type="file" id="imageUpload" accept="image/*" multiple>
+    <br>
     <button onclick="createVideo()">Luo video</button>
-    <button onclick="downloadVideo()">Lataa video</button>
     <video id="outputVideo" controls></video>
+
     <script>
-        const { createFFmpeg, fetchFile } = FFmpeg;
-        const ffmpeg = createFFmpeg({ log: true });
+        const { FFmpeg } = ffmpeg;
+        let ff = null;
 
         async function createVideo() {
-            const images = document.getElementById('imageUpload').files;
-            if (!images.length) {
-                alert("Lataa kuvia ensin!");
-                return;
+            const status = document.querySelector('h1');
+            const files = document.getElementById('imageUpload').files;
+            if (files.length === 0) return alert("Valitse kuvia!");
+
+            if (ff === null) {
+                ff = new FFmpeg();
+                status.innerText = "Ladataan moottoria...";
+                // Tämä 'core.js' lataus on se kriittinen kohta
+                await ff.load({
+                    coreURL: "https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js",
+                });
             }
 
-            document.body.style.cursor = "wait";
-            alert("Luodaan videota, odota hetki...");
+            status.innerText = "Käsitellään...";
 
-            if (!ffmpeg.isLoaded()) {
-                await ffmpeg.load();
+            // Kirjoitetaan kuvat muistiin
+            for (let i = 0; i < files.length; i++) {
+                const data = await ffmpeg.fetchFile(files[i]);
+                await ff.writeFile(`img${i}.jpg`, data);
             }
 
-            try {
-                // Kirjoita kuvatiedostot
-                for (let i = 0; i < images.length; i++) {
-                    ffmpeg.FS('writeFile', `image${i}.jpg`, await fetchFile(images[i]));
-                }
+            status.innerText = "Luodaan videota...";
+            
+            // FFmpeg-komento (yksinkertaistettu kännykälle)
+            await ff.exec([
+                '-framerate', '1',
+                '-i', 'img%d.jpg',
+                '-c:v', 'libx264',
+                '-pix_fmt', 'yuv420p',
+                'output.mp4'
+            ]);
 
-                // Aja FFmpeg-komento
-                await ffmpeg.run(
-                    '-framerate', '1',
-                    '-i', 'image%d.jpg',
-                    '-c:v', 'libx264',
-                    '-r', '30',
-                    '-pix_fmt', 'yuv420p',
-                    'output.mp4'
-                );
-
-                // Lue tulostiedosto ja näytä video
-                const data = ffmpeg.FS('readFile', 'output.mp4');
-                const video = document.getElementById('outputVideo');
-                video.src = URL.createObjectURL(
-                    new Blob([data.buffer], { type: 'video/mp4' })
-                );
-
-                document.body.style.cursor = "default";
-                alert("Video luotu onnistuneesti!");
-            } catch (error) {
-                document.body.style.cursor = "default";
-                alert("Virhe videon luomisessa: " + error.message);
-            }
-        }
-
-        function downloadVideo() {
+            const data = await ff.readFile('output.mp4');
             const video = document.getElementById('outputVideo');
-            if (!video.src) {
-                alert("Ei videota ladattavaksi!");
-                return;
-            }
-            const a = document.createElement('a');
-            a.href = video.src;
-            a.download = 'luotu_video.mp4';
-            a.click();
+            video.src = URL.createObjectURL(new Blob([data.buffer], { type: 'video/mp4' }));
+            
+            status.innerText = "Valmis!";
         }
     </script>
 </body>
