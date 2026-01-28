@@ -1,65 +1,122 @@
-<!DOCTYPE html>
-<html>
+ <!DOCTYPE html>
+<html lang="fi">
 <head>
-    <title>Kuvat videoksi</title>
-    <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.12.7/dist/umd/ffmpeg.umd.js"></script>
-    <script src="https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd/index.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Videotyökalu - Vikasietoinen</title>
+    <script src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.7/dist/umd/ffmpeg.umd.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.1/dist/umd/index.js"></script>
     <style>
-        body { font-family: sans-serif; text-align: center; padding: 20px; background: #f0f0f0; }
-        #outputVideo { width: 90%; margin-top: 20px; background: black; }
-        button { padding: 15px; margin: 10px; border-radius: 8px; border: none; background: #007bff; color: white; font-weight: bold; }
+        body { font-family: sans-serif; text-align: center; padding: 15px; background: #f4f4f9; color: #333; }
+        .container { max-width: 500px; margin: auto; background: white; padding: 20px; border-radius: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        h1 { font-size: 1.2rem; }
+        #outputVideo { width: 100%; margin-top: 15px; border-radius: 8px; display: none; background: #000; }
+        button { background: #007bff; color: white; border: none; padding: 12px 20px; border-radius: 8px; font-size: 1rem; cursor: pointer; width: 100%; margin-top: 10px; }
+        button:disabled { background: #ccc; }
+        input[type="file"] { margin: 15px 0; font-size: 0.9rem; }
+        
+        /* Lokiruutu vikoja varten */
+        #logContainer { margin-top: 20px; text-align: left; background: #222; color: #0f0; padding: 10px; border-radius: 5px; font-family: monospace; font-size: 11px; max-height: 200px; overflow-y: auto; }
+        .log-error { color: #ff4d4d; font-weight: bold; }
+        .log-info { color: #88ff88; }
     </style>
 </head>
 <body>
-    <h1>Kuvista videoksi</h1>
+
+<div class="container">
+    <h1>Kuvista videoksi (v0.12)</h1>
+    <p style="font-size: 0.8rem; color: #666;">Valitse 2-5 kuvaa testiksi.</p>
+    
     <input type="file" id="imageUpload" accept="image/*" multiple>
-    <br>
-    <button onclick="createVideo()">Luo video</button>
+    <button id="startBtn" onclick="createVideo()">Luo video</button>
+    
     <video id="outputVideo" controls></video>
 
-    <script>
-        const { FFmpeg } = ffmpeg;
-        let ff = null;
+    <div id="logContainer">
+        <div>-- Lokit ilmestyvät tähän --</div>
+    </div>
+</div>
 
-        async function createVideo() {
-            const status = document.querySelector('h1');
-            const files = document.getElementById('imageUpload').files;
-            if (files.length === 0) return alert("Valitse kuvia!");
+<script>
+    const { FFmpeg } = ffmpeg; // Huom: ffmpeg-muuttuja tulee UMD-kirjastosta
+    const { fetchFile } = ffmpegUtil;
+    let ff = null;
 
+    const logBox = document.getElementById('logContainer');
+    const startBtn = document.getElementById('startBtn');
+    const videoElem = document.getElementById('outputVideo');
+
+    function addLog(msg, isError = false) {
+        const div = document.createElement('div');
+        div.className = isError ? 'log-error' : 'log-info';
+        div.innerText = `> ${msg}`;
+        logBox.appendChild(div);
+        logBox.scrollTop = logBox.scrollHeight;
+        console.log(msg);
+    }
+
+    async function createVideo() {
+        const files = document.getElementById('imageUpload').files;
+        if (files.length === 0) {
+            addLog("Virhe: Valitse vähintään yksi kuva!", true);
+            return;
+        }
+
+        startBtn.disabled = true;
+        videoElem.style.display = "none";
+        
+        try {
             if (ff === null) {
+                addLog("Ladataan FFmpeg-moottoria... (tämä voi kestää)");
                 ff = new FFmpeg();
-                status.innerText = "Ladataan moottoria...";
-                // Tämä 'core.js' lataus on se kriittinen kohta
+                
+                // Kuunnellaan FFmpegin sisäisiä viestejä
+                ff.on('log', ({ message }) => addLog(message));
+
                 await ff.load({
-                    coreURL: "https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js",
+                    coreURL: "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js",
                 });
+                addLog("Moottori ladattu onnistuneesti!");
             }
 
-            status.innerText = "Käsitellään...";
+            addLog(`Käsitellään ${files.length} kuvaa...`);
 
-            // Kirjoitetaan kuvat muistiin
+            // Kirjoitetaan tiedostot virtuaaliseen muistiin
             for (let i = 0; i < files.length; i++) {
-                const data = await ffmpeg.fetchFile(files[i]);
+                addLog(`Luetaan tiedostoa: ${files[i].name}`);
+                const data = await fetchFile(files[i]);
                 await ff.writeFile(`img${i}.jpg`, data);
             }
 
-            status.innerText = "Luodaan videota...";
+            addLog("Aloitetaan videon renderöinti...");
             
-            // FFmpeg-komento (yksinkertaistettu kännykälle)
+            // Suoritetaan pakkaus
+            // -framerate 1 = yksi kuva per sekunti
             await ff.exec([
                 '-framerate', '1',
                 '-i', 'img%d.jpg',
                 '-c:v', 'libx264',
                 '-pix_fmt', 'yuv420p',
+                '-preset', 'ultrafast', // Nopeuttaa kännykällä
                 'output.mp4'
             ]);
 
+            addLog("Video valmis! Luetaan tiedostoa...");
             const data = await ff.readFile('output.mp4');
-            const video = document.getElementById('outputVideo');
-            video.src = URL.createObjectURL(new Blob([data.buffer], { type: 'video/mp4' }));
             
-            status.innerText = "Valmis!";
+            const url = URL.createObjectURL(new Blob([data.buffer], { type: 'video/mp4' }));
+            videoElem.src = url;
+            videoElem.style.display = "block";
+            addLog("VALMIS! Video on näkyvissä.");
+
+        } catch (error) {
+            addLog("KRIITTINEN VIRHE: " + error.message, true);
+            addLog("Varmista, että selaimessa on tarpeeksi muistia.", true);
+        } finally {
+            startBtn.disabled = false;
         }
-    </script>
+    }
+</script>
+
 </body>
 </html>
